@@ -17,6 +17,10 @@
     
     GLuint vertexArray;
     GLuint vertexBuffer;
+    
+    UITouch *trackingTouch;
+    float yRotation, xRotation;
+	float yRotationAdder, xRotationAdder;
 }
 @property (strong, nonatomic) EAGLContext *context;
 @property (strong, nonatomic) GLKReflectionMapEffect *effect;
@@ -110,17 +114,17 @@ self.effect.light1.specularColor = GLKVector4Make(1.0f, 0.0f, 0.0f, 1.0f);
     
     glEnable(GL_DEPTH_TEST);
     
-    glGenVertexArraysOES(1, &vertexArray);
-    glBindVertexArrayOES(vertexArray);
+    //glGenVertexArraysOES(1, &vertexArray);
+    //glBindVertexArrayOES(vertexArray);
     
-    glGenBuffers(1, &vertexBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(MeshVertexData), MeshVertexData, GL_STATIC_DRAW);
+    //glGenBuffers(1, &vertexBuffer);
+    //glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+    //glBufferData(GL_ARRAY_BUFFER, sizeof(MeshVertexData), MeshVertexData, GL_STATIC_DRAW);
     
-    glEnableVertexAttribArray(GLKVertexAttribPosition);
-    glVertexAttribPointer(GLKVertexAttribPosition, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), 0);
-    glEnableVertexAttribArray(GLKVertexAttribNormal);
-    glVertexAttribPointer(GLKVertexAttribNormal, 3, GL_FLOAT, GL_FALSE,  6 * sizeof(GLfloat), (char *)12);
+    //glEnableVertexAttribArray(GLKVertexAttribPosition);
+    //glVertexAttribPointer(GLKVertexAttribPosition, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), 0);
+    //glEnableVertexAttribArray(GLKVertexAttribNormal);
+    //glVertexAttribPointer(GLKVertexAttribNormal, 3, GL_FLOAT, GL_FALSE,  6 * sizeof(GLfloat), (char *)12);
     
     
     NSArray *cubeMapFileNames = [NSArray arrayWithObjects:
@@ -166,8 +170,27 @@ self.effect.light1.specularColor = GLKVector4Make(1.0f, 0.0f, 0.0f, 1.0f);
     self.effect.transform.projectionMatrix = projectionMatrix;
     self.skyboxEffect.transform.projectionMatrix = projectionMatrix;
     
+    /*
+     
+     Cheekily do some time-dependant animation calculations here at the top.
+     By putting these here, we explicitly link animation speed to the frame
+     rate. That'd be bad in almost any application, but in this one we know
+     we can always keep up with the maximum frame rate, so it's no problem.
+     
+     Basic task here: apply any spin that is currently ongoing and apply
+     damping so that it eventually stops. This is our simulation of inertia.
+     
+     */
+	yRotation += yRotationAdder; yRotationAdder *= 0.95f;
+	xRotation += xRotationAdder; xRotationAdder *= 0.95f;
+	if(xRotation > 90.0f) xRotation = 90.0f;
+	if(xRotation < -90.0f) xRotation = -90.0f;
+    
     GLKMatrix4 modelViewMatrix = GLKMatrix4MakeTranslation(0.0f, 0.0f, -3.5f);
-    modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, rotation, 1.0f, 1.0f, 1.0f);
+    //modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, rotation, 1.0f, 1.0f, 1.0f);
+    
+    modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, GLKMathDegreesToRadians(xRotation), 1.0, 0.0, 0.0);
+    modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, GLKMathDegreesToRadians(yRotation), 0.0, 1.0, 0.0);
     
     self.effect.transform.modelviewMatrix = modelViewMatrix;
     
@@ -195,4 +218,58 @@ self.effect.light1.specularColor = GLKVector4Make(1.0f, 0.0f, 0.0f, 1.0f);
     
 
 }
+
+/*
+ 
+ Touch handling. We track up to one touch at a time.
+ 
+ If it moves, we apply the relevant change to our current xRotation
+ and yRotation member variables.
+ 
+ If it's cancelled or ends normally, we use the change in the instant
+ immediately before that to set a rotation velocity. This gives us
+ an inertial camera, in conjunction with the tiny bit of code at the
+ top of drawFrame.
+ 
+ */
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
+{
+	if(!trackingTouch)
+	{
+		trackingTouch = [touches anyObject];
+		xRotationAdder = yRotationAdder = 0;
+	}
+}
+
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
+{
+	if([touches containsObject:trackingTouch])
+	{
+		CGPoint positionNow = [trackingTouch locationInView:nil];
+		CGPoint positionThen = [trackingTouch previousLocationInView:nil];
+        
+		yRotationAdder = -(positionNow.x - positionThen.x) / (480.0f / 90.0f);
+		xRotationAdder = -(positionNow.y - positionThen.y) / (480.0f / 90.0f);
+        
+		trackingTouch = nil;
+	}
+}
+
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event
+{
+	[self touchesEnded:touches withEvent:event];
+}
+
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
+{
+	if([touches containsObject:trackingTouch])
+	{
+		CGPoint positionNow = [trackingTouch locationInView:nil];
+		CGPoint positionThen = [trackingTouch previousLocationInView:nil];
+        
+		yRotation -= (positionNow.x - positionThen.x) / (480.0f / 90.0f);
+		xRotation -= (positionNow.y - positionThen.y) / (480.0f / 90.0f);
+	}
+}
+
 @end
